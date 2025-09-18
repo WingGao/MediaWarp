@@ -254,6 +254,9 @@ type MediaSourceInfo struct {
 	Type                       *MediaSourceType          `json:"Type,omitempty"`
 	Video3DFormat              *Video3DFormat            `json:"Video3DFormat,omitempty"`
 	WallClockStart             *string                   `json:"WallClockStart,omitempty"`
+	IgnoreDts                  *bool                     `json:"IgnoreDts,omitempty"`
+	IgnoreIndex                *bool                     `json:"IgnoreIndex,omitempty"`
+	GenPtsInput                *bool                     `json:"GenPtsInput,omitempty"`
 }
 
 // MediaStream
@@ -311,6 +314,7 @@ type MediaStream struct {
 	Title                           *string                 `json:"Title,omitempty"`
 	Type                            *MediaStreamType        `json:"Type,omitempty"`
 	VideoRange                      *string                 `json:"VideoRange,omitempty"`
+	VideoRangeType                  *string                 `json:"VideoRangeType,omitempty"`
 	Width                           *int64                  `json:"Width"`
 }
 

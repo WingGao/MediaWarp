@@ -42,7 +42,7 @@ func NewJellyfinHander(addr string, apiKey string) (*JellyfinHandler, error) {
 				Regexp: constants.JellyfinRegexp.Router.ModifyPlaybackInfo,
 				Handler: responseModifyCreater(
 					&httputil.ReverseProxy{Director: jellyfinHandler.proxy.Director},
-					jellyfinHandler.ModifyPlaybackInfo,
+					jellyfinHandler.ModifyPlaybackInfoWing,
 				),
 			},
 			{
