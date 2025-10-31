@@ -7,22 +7,23 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 var (
 	version = VersionInfo{
 		AppVersion: appVersion,
 		CommitHash: commitHash,
-		BuildData:  parseBuildTime(buildDate),
+		BuildDate:  parseBuildTime(buildDate),
 		GoVersion:  runtime.Version(),
 		OS:         runtime.GOOS,
 		Arch:       runtime.GOARCH,
 	}
 
-	Port         int                 // MediaWarp开放端口
+	Port         uint16              // MediaWarp开放端口
 	MediaServer  MediaServerSetting  // 上游媒体服务器设置
 	Logger       LoggerSetting       // 日志设置
+	Cache        CacheSetting        // 缓存设置
 	Web          WebSetting          // Web服务器设置
 	ClientFilter ClientFilterSetting // 客户端过滤设置
 	HTTPStrm     HTTPStrmSetting     // HTTPSTRM设置
@@ -35,18 +36,9 @@ func Version() *VersionInfo {
 	return &version
 }
 
-// 二进制文件目录
-func RootDir() string {
-	executablePath, err := os.Executable()
-	if err != nil {
-		panic(err)
-	}
-	return filepath.Dir(executablePath)
-}
-
 // 配置文件目录
 func ConfigDir() string {
-	return filepath.Join(RootDir(), "config")
+	return "config"
 }
 
 // 配置文件路径
@@ -59,7 +51,7 @@ func ConfigPath() string {
 // 总日志目录
 // ./logs
 func LogDir() string {
-	return filepath.Join(RootDir(), "logs")
+	return "logs"
 }
 
 // 获取日志目录
@@ -84,7 +76,7 @@ func ServiceLogPath() string {
 //
 // 用户自定义静态文件存放地址
 func CostomDir() string {
-	return filepath.Join(RootDir(), "static")
+	return "custom"
 }
 
 // MediaWarp监听地址
@@ -107,38 +99,25 @@ func Init(path string) error {
 
 // 读取并解析配置文件
 func loadConfig(path string) error {
-	if path != "" {
-		viper.SetConfigFile(path)
-	} else {
-		viper.AddConfigPath(ConfigDir())
-		viper.SetConfigName("config")
-	}
-
-	if err := viper.ReadInConfig(); err != nil {
+	var s Setting
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return fmt.Errorf("读取配置文件失败: %v", err)
 	}
+	err = yaml.Unmarshal(data, &s)
+	if err != nil {
+		return fmt.Errorf("解析配置文件失败: %v", err)
+	}
 
-	Port = viper.GetInt("Port")
-	viper.UnmarshalKey("MediaServer", &MediaServer)
-
-	if err := viper.UnmarshalKey("Logger", &Logger); err != nil {
-		return fmt.Errorf("LoggerSetting 解析失败：%v", err)
-	}
-	if err := viper.UnmarshalKey("Web", &Web); err != nil {
-		return fmt.Errorf("WebSetting 解析失败：%v", err)
-	}
-	if err := viper.UnmarshalKey("ClientFilter", &ClientFilter); err != nil {
-		return fmt.Errorf("ClientFilterSetting 解析失败：%v", err)
-	}
-	if err := viper.UnmarshalKey("HTTPStrm", &HTTPStrm); err != nil {
-		return fmt.Errorf("HTTPStrmSetting 解析失败：%v", err)
-	}
-	if err := viper.UnmarshalKey("AlistStrm", &AlistStrm); err != nil {
-		return fmt.Errorf("AlistStrmSetting 解析失败：%v", err)
-	}
-	if err := viper.UnmarshalKey("Subtitle", &Subtitle); err != nil {
-		return fmt.Errorf("SubtitleSetting 解析失败：%v", err)
-	}
+	Port = s.Port
+	MediaServer = s.MediaServer
+	Logger = s.Logger
+	Cache = s.Cache
+	Web = s.Web
+	ClientFilter = s.ClientFilter
+	HTTPStrm = s.HTTPStrm
+	AlistStrm = s.AlistStrm
+	Subtitle = s.Subtitle
 	return nil
 }
 

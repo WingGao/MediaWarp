@@ -5,16 +5,20 @@ import (
 	"MediaWarp/internal/config"
 	"MediaWarp/internal/logging"
 	"MediaWarp/internal/service"
+	"MediaWarp/internal/service/alist"
 	"MediaWarp/internal/service/jellyfin"
 	"MediaWarp/utils"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -22,9 +26,10 @@ import (
 
 // Jellyfin 服务器处理器
 type JellyfinHandler struct {
-	server      *jellyfin.Jellyfin     // Jellyfin 服务器
-	routerRules []RegexpRouteRule      // 正则路由规则
-	proxy       *httputil.ReverseProxy // 反向代理
+	server          *jellyfin.Jellyfin     // Jellyfin 服务器
+	routerRules     []RegexpRouteRule      // 正则路由规则
+	proxy           *httputil.ReverseProxy // 反向代理
+	httpStrmHandler StrmHandlerFunc
 }
 
 func NewJellyfinHander(addr string, apiKey string) (*JellyfinHandler, error) {
@@ -65,6 +70,11 @@ func NewJellyfinHander(addr string, apiKey string) (*JellyfinHandler, error) {
 			}
 		}
 	}
+
+	jellyfinHandler.httpStrmHandler, err = getHTTPStrmHandler()
+	if err != nil {
+		return nil, fmt.Errorf("创建 HTTPStrm 处理器失败: %w", err)
+	}
 	return &jellyfinHandler, nil
 }
 
@@ -78,13 +88,21 @@ func (jellyfinHandler *JellyfinHandler) GetRegexpRouteRules() []RegexpRouteRule 
 	return jellyfinHandler.routerRules
 }
 
+func (jellyfinHandler *JellyfinHandler) GetImageCacheRegexp() *regexp.Regexp {
+	return constants.JellyfinRegexp.Cache.Image
+}
+
+func (JellyfinHandler) GetSubtitleCacheRegexp() *regexp.Regexp {
+	return constants.JellyfinRegexp.Cache.Subtitle
+}
+
 // 修改播放信息请求
 //
 // /Items/:itemId
 // 强制将 HTTPStrm 设置为支持直链播放和转码、AlistStrm 设置为支持直链播放并且禁止转码
 func (jellyfinHandler *JellyfinHandler) ModifyPlaybackInfo(rw *http.Response) error {
 	defer rw.Body.Close()
-	data, err := readBody(rw)
+	data, err := io.ReadAll(rw.Body)
 	if err != nil {
 		logging.Warning("读取响应体失败：", err)
 		return err
@@ -114,7 +132,7 @@ func (jellyfinHandler *JellyfinHandler) ModifyPlaybackInfo(rw *http.Response) er
 				playbackInfoResponse.MediaSources[index].TranscodingSubProtocol = nil
 				playbackInfoResponse.MediaSources[index].TranscodingContainer = nil
 				if mediasource.DirectStreamURL != nil {
-					apikeypair, err := utils.ResolveEmbyAPIKVPairs(*mediasource.DirectStreamURL)
+					apikeypair, err := utils.ResolveEmbyAPIKVPairs(mediasource.DirectStreamURL)
 					if err != nil {
 						logging.Warning("解析API键值对失败：", err)
 						continue
@@ -136,7 +154,7 @@ func (jellyfinHandler *JellyfinHandler) ModifyPlaybackInfo(rw *http.Response) er
 				directStreamURL := fmt.Sprintf("/Videos/%s/stream?MediaSourceId=%s&Static=true", *mediasource.ID, *mediasource.ID)
 				if mediasource.DirectStreamURL != nil {
 					logging.Debugf("%s 原直链播放链接： %s", *mediasource.Name, *mediasource.DirectStreamURL)
-					apikeypair, err := utils.ResolveEmbyAPIKVPairs(*mediasource.DirectStreamURL)
+					apikeypair, err := utils.ResolveEmbyAPIKVPairs(mediasource.DirectStreamURL)
 					if err != nil {
 						logging.Warning("解析API键值对失败：", err)
 						continue
@@ -157,7 +175,7 @@ func (jellyfinHandler *JellyfinHandler) ModifyPlaybackInfo(rw *http.Response) er
 					logging.Warning("获取 AlistServer 失败：", err)
 					continue
 				}
-				fsGetData, err := alistServer.FsGet(*mediasource.Path)
+				fsGetData, err := alistServer.FsGet(&alist.FsGetRequest{Path: *mediasource.Path, Page: 1})
 				if err != nil {
 					logging.Warning("请求 FsGet 失败：", err)
 					continue
@@ -174,7 +192,9 @@ func (jellyfinHandler *JellyfinHandler) ModifyPlaybackInfo(rw *http.Response) er
 	}
 
 	rw.Header.Set("Content-Type", "application/json") // 更新 Content-Type 头
-	return updateBody(rw, data)
+	rw.Header.Set("Content-Length", strconv.Itoa(len(data)))
+	rw.Body = io.NopCloser(bytes.NewReader(data))
+	return nil
 }
 
 // 视频流处理器
@@ -210,45 +230,17 @@ func (jellyfinHandler *JellyfinHandler) VideosHandler(ctx *gin.Context) {
 			switch strmFileType {
 			case constants.HTTPStrm:
 				if *mediasource.Protocol == jellyfin.HTTP {
-					redirectURL := *mediasource.Path
-					if config.HTTPStrm.FinalURL {
-						logging.Debug("HTTPStrm 启用获取最终 URL，开始尝试获取最终 URL")
-						if finalURL, err := getFinalURL(redirectURL, ctx.Request.UserAgent()); err != nil {
-							logging.Warning("获取最终 URL 失败，使用原始 URL：", err)
-						} else {
-							redirectURL = finalURL
-						}
-					} else {
-						logging.Debug("HTTPStrm 未启用获取最终 URL，直接使用原始 URL")
-					}
-					logging.Info("HTTPStrm 重定向至：", redirectURL)
+					ctx.Redirect(http.StatusFound, jellyfinHandler.httpStrmHandler(*mediasource.Path, ctx.Request.UserAgent()))
+					return
+				}
+
+			case constants.AlistStrm: // 无需判断 *mediasource.Container 是否以Strm结尾，当 AlistStrm 存储的位置有对应的文件时，*mediasource.Container 会被设置为文件后缀
+				redirectURL := alistStrmHandler(*mediasource.Path, opt.(string))
+				if redirectURL != "" {
 					ctx.Redirect(http.StatusFound, redirectURL)
 				}
 				return
-			case constants.AlistStrm: // 无需判断 *mediasource.Container 是否以Strm结尾，当 AlistStrm 存储的位置有对应的文件时，*mediasource.Container 会被设置为文件后缀
-				alistServerAddr := opt.(string)
-				alistServer, err := service.GetAlistServer(alistServerAddr)
-				if err != nil {
-					logging.Warning("获取 AlistServer 失败：", err)
-					return
-				}
-				fsGetData, err := alistServer.FsGet(*mediasource.Path)
-				if err != nil {
-					logging.Warning("请求 FsGet 失败：", err)
-					return
-				}
-				var redirectURL string
-				if config.AlistStrm.RawURL {
-					redirectURL = fsGetData.RawURL
-				} else {
-					redirectURL = fmt.Sprintf("%s/d%s", alistServerAddr, *mediasource.Path)
-					if fsGetData.Sign != "" {
-						redirectURL += "?sign=" + fsGetData.Sign
-					}
-				}
-				logging.Infof("AlistStrm 重定向至：%s", redirectURL)
-				ctx.Redirect(http.StatusFound, redirectURL)
-				return
+
 			case constants.UnknownStrm:
 				jellyfinHandler.proxy.ServeHTTP(ctx.Writer, ctx.Request)
 				return
@@ -262,7 +254,7 @@ func (jellyfinHandler *JellyfinHandler) ModifyIndex(rw *http.Response) error {
 	var (
 		htmlFilePath string = path.Join(config.CostomDir(), "index.html")
 		htmlContent  []byte
-		addHEAD      []byte
+		addHEAD      bytes.Buffer
 		err          error
 	)
 
@@ -273,39 +265,44 @@ func (jellyfinHandler *JellyfinHandler) ModifyIndex(rw *http.Response) error {
 			return err
 		}
 	} else { // 从上游获取响应体
-		if htmlContent, err = readBody(rw); err != nil {
+		if htmlContent, err = io.ReadAll(rw.Body); err != nil {
 			return err
 		}
 	}
 
 	if config.Web.Head != "" { // 用户自定义HEAD
-		addHEAD = append(addHEAD, []byte(config.Web.Head+"\n")...)
+		addHEAD.WriteString(config.Web.Head + "\n")
 	}
 	if config.Web.ExternalPlayerUrl { // 外部播放器
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/embyExternalUrl/embyWebAddExternalUrl/embyLaunchPotplayer.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/embyExternalUrl/embyWebAddExternalUrl/embyLaunchPotplayer.js"></script>` + "\n")
 	}
 	if config.Web.Crx { // crx 美化
-		addHEAD = append(addHEAD, []byte(`<link rel="stylesheet" id="theme-css" href="/MediaWarp/static/jellyfin-crx/static/css/style.css" type="text/css" media="all" />
+		addHEAD.WriteString(`<link rel="stylesheet" id="theme-css" href="/MediaWarp/static/jellyfin-crx/static/css/style.css" type="text/css" media="all" />
     <script src="/MediaWarp/static/jellyfin-crx/static/js/common-utils.js"></script>
     <script src="/MediaWarp/static/jellyfin-crx/static/js/jquery-3.6.0.min.js"></script>
     <script src="/MediaWarp/static/jellyfin-crx/static/js/md5.min.js"></script>
-    <script src="/MediaWarp/static/jellyfin-crx/content/main.js"></script>`+"\n")...)
+    <script src="/MediaWarp/static/jellyfin-crx/content/main.js"></script>` + "\n")
 	}
 	if config.Web.ActorPlus { // 过滤没有头像的演员和制作人员
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/emby-web-mod/actorPlus/actorPlus.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/emby-web-mod/actorPlus/actorPlus.js"></script>` + "\n")
 	}
 	if config.Web.FanartShow { // 显示同人图（fanart图）
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/emby-web-mod/fanart_show/fanart_show.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/emby-web-mod/fanart_show/fanart_show.js"></script>` + "\n")
 	}
 	if config.Web.Danmaku { // 弹幕
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/jellyfin-danmaku/ede.js" defer></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/jellyfin-danmaku/ede.js" defer></script>` + "\n")
 	}
 	if config.Web.VideoTogether { // VideoTogether
-		addHEAD = append(addHEAD, []byte(`<script src="https://2gether.video/release/extension.website.user.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="https://2gether.video/release/extension.website.user.js"></script>` + "\n")
 	}
-	htmlContent = bytes.Replace(htmlContent, []byte("</head>"), append(addHEAD, []byte("</head>")...), 1) // 将添加HEAD
 
-	return updateBody(rw, htmlContent)
+	addHEAD.WriteString(`<!-- MediaWarp Web 页面修改功能 -->` + "\n" + "</head>")
+
+	htmlContent = bytes.Replace(htmlContent, []byte("</head>"), addHEAD.Bytes(), 1) // 将添加HEAD
+
+	rw.Header.Set("Content-Length", strconv.Itoa(len(htmlContent)))
+	rw.Body = io.NopCloser(bytes.NewReader(htmlContent))
+	return nil
 }
 
 var _ MediaServerHandler = (*JellyfinHandler)(nil) // 确保 JellyfinHandler 实现 MediaServerHandler 接口

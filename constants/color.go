@@ -1,8 +1,14 @@
 package constants
 
+import (
+	"strconv"
+)
+
+type Color uint8
+
 // 基础颜色枚举
 const (
-	ColorBlack  uint8 = iota // 黑色
+	ColorBlack  Color = iota // 黑色
 	ColorRed                 // 红色
 	ColorGreen               // 绿色
 	ColorYellow              // 黄色
@@ -11,6 +17,14 @@ const (
 	ColorCyan                // 青色
 	ColorGray                // 灰色
 )
+
+func (c Color) ColorString(s string) string {
+	return "\033[3" + strconv.Itoa(int(c)) + "m" + s + "\033[0m"
+}
+
+func (c Color) ColorBackground(s string) string {
+	return "\033[4" + strconv.Itoa(int(c)) + "m" + s + "\033[0m"
+}
 
 // HTTP 状态码对应颜色
 const (

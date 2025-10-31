@@ -1,16 +1,16 @@
 # 版本更新日志
-- 2024-8-21: v0.0.1
+- 2024.8.21: v0.0.1
   - 实现 MediaWarp 基本功能
-- 2024-8-25: v0.0.2
+- 2024.8.25: v0.0.2
   - 增加返回自定义静态资源功能
   - 优化播放直链视频 302 重定向逻辑
   - 增加自定义客户端过滤功能
-- 2024-9-14: v0.0.3
+- 2024.9.14: v0.0.3
   - 实现 AlistStrm 重定向
   - 适配 EmbyServer 4.9 视频播放逻辑
   - 嵌入实用功能（外部播放器、弹幕、美化等）
   - 支持WebSocket
-- 2024-9-29: v0.0.4
+- 2024.9.29: v0.0.4
   - 优化 mediaSourceID 处理逻辑
   - 使用 httputil.ReverseProxy 处理 HTTP 和 WebSocket 请求
   - 设置浏览器referer策略，跳转时减少服务器站点泄露
@@ -76,5 +76,29 @@
   - 更新上游依赖
   - 提高对 EmbyServer beta 版本的兼容性
   - HTTPStrm 添加获取最终 URL 获取功能，减少客户端重定向次数
-  - 提高对 Afusekt 客户端的兼容性 [#37](https://github.com/Akimio521/MediaWarp/issues/37)
+  - 提高对 Afusekt 客户端的兼容性 [#37](https://github.com/AkimioJR/MediaWarp/issues/37)
   - 优化 responseModifyCreater 函数，可以捕捉内层函数的 panic 信息
+- 2025.7.10: v0.1.2
+  - 使用全局优化的 HTTP 客户端替换局部客户端实例，统一 HTTP 出口
+  - 添加自定义 robots.txt 支持
+  - 修正 Jellyfin 播放信息正则表达式，确保匹配正确的路径 [#47](https://github.com/AkimioJR/MediaWarp/issues/47)
+- 2025.10.2: v0.1.3
+  - 将 MediaServerType 从字符串类型更改为 uint8
+  - 修复 robots.txt 路由错误问题
+  - 优化初始化过程，统一日志输出，移除冗余代码
+  - 使用当前目录作为项目根目录
+- 2025.10.15: v0.1.4
+  - 添加 HTTPStrm 最终重定向缓存
+  - 添加 Alist API 缓存
+  - AlistStrm 支持基础目录未非根目录用户
+  - 移除 viper，仅支持识别 yaml 配置文件
+  - 添加结构体标签（**可能导致部分配置不通用**）
+  - 修复 AlistStrm 重定向逻辑，确保仅在有效的重定向 URL 时进行重定向
+  - 优化 QueryCaseInsensitive 中间件，简化查询参数处理逻辑
+  - 优化 LoggerFileHook 的文件处理逻辑，提高性能
+  - 修复 GZIP 压缩时响应体为空的问题 ([#64](https://github.com/AkimioJR/MediaWarp/issues/64))
+- 2025.10.27: v0.1.5
+  - 移除编码压缩/解压缩
+  - 优化中间件处理逻辑
+  - 添加图片/字幕缓存中间件
+  - 修复 Alist API 缓存问题

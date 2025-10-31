@@ -1,11 +1,11 @@
 [license]: /LICENSE
-[license-badge]: https://img.shields.io/github/license/Akimio521/MediaWarp?style=flat-square&a=1
-[prs]: https://github.com/Akimio521/MediaWarp
+[license-badge]: https://img.shields.io/github/license/AkimioJR/MediaWarp?style=flat-square&a=1
+[prs]: https://github.com/AkimioJR/MediaWarp
 [prs-badge]: https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square
-[issues]: https://github.com/Akimio521/MediaWarp/issues/new
+[issues]: https://github.com/AkimioJR/MediaWarp/issues/new
 [issues-badge]: https://img.shields.io/badge/Issues-welcome-brightgreen.svg?style=flat-square
-[release]: https://github.com/Akimio521/MediaWarp/releases/latest
-[release-badge]: https://img.shields.io/github/v/release/Akimio521/MediaWarp?style=flat-square
+[release]: https://github.com/AkimioJR/MediaWarp/releases/latest
+[release-badge]: https://img.shields.io/github/v/release/AkimioJR/MediaWarp?style=flat-square
 [docker]: https://hub.docker.com/r/akimio/mediawarp
 [docker-badge]: https://img.shields.io/docker/pulls/akimio/mediawarp?color=%2348BB78&logo=docker&label=pulls
 
@@ -33,11 +33,11 @@ MediaWarp 是**前置于 EmbyServer/Jellyfin 的反向代理服务器**，修改
 
 # 功能
 - Strm 文件可以实现 302 直链播放，流量不经过 EmbyServer/Jellyfin
-  - **推荐配合 [AutoFilm](https://github.com/Akimio521/AutoFilm) 使用**
+  - **推荐配合 [AutoFilm](https://github.com/AkimioJR/AutoFilm) 使用**
   - 已通过测试客户端（Web、iOS Emby、Infuse、Conflux、Fileball、Vidhub）
   - 支持 Strm：
     - HTTPStrm：Strm 文件内容是 HTTP 链接，浏览器访问链接可以直接下载到视频文件（**客户端需要可以访问到该链接，MediaWarp 不需要访问到该地址**）
-    - AlistStrm：Strm 文件内容是 Alist 上的路径，需要拼接 Alist 的地址可以访问到文件（**客户端无需访问到 Alist 服务器，仅需要 MediaWarp 可以访问到 Alist 服务器，但是需要可以访问到 Alist 服务器上文件的 raw_url 属性，如果使用网盘存储则无需在意这一点，但目前兼容性较差且不支持转码，通过挂载真实目录可以缓解这一问题**）
+    - AlistStrm：Strm 文件内容是 Alist 上视频文件的路径（**客户端无需访问到 Alist 服务器，仅需要 MediaWarp 可以访问到 Alist 服务器，但是需要可以访问到 Alist 服务器上文件的 raw_url 属性，如果使用网盘存储则无需在意这一点，但目前兼容性较差且不支持转码，通过挂载真实目录可以缓解这一问题**）
 
 - 屏蔽特定客户端访问
   
@@ -65,9 +65,9 @@ MediaWarp 是**前置于 EmbyServer/Jellyfin 的反向代理服务器**，修改
 - [x] 提供多种 Web 前端美化功能
 - [x] AlistStrm 实现 302 重定向
 - [x] 嵌入一些实用的 JavaScript 方便使用
-- [x] ~~缓存图片、字幕提高性能~~（为避免内存泄漏问题已经暂时移除）
-- [x] 多格式配置文件（优先级：JSON > TOML > YAML > YML > Java properties > Java props，格式参考[config.yaml.example](./config/config.yaml.example)）
-- [x] 支持通过 `--config` 参数指定配置文件地址（默认在执行文件的目录下的 config 子目录中查询配置文件）
+- [x] 缓存图片、字幕提高性能
+- [x] ~~多格式配置文件（优先级：JSON > TOML > YAML > YML > Java properties > Java props，格式参考[config.yaml.example](./config/config.yaml.example)）~~
+- [x] 支持通过 `--config` 参数指定配置文件地址
 - [x] ART 字幕转 ASS 字幕（仅 Emby）
 - [ ] ASS 字幕字体子集化并嵌入字体
 - [x] 适配 Emby
@@ -103,6 +103,6 @@ MediaWarp 是**前置于 EmbyServer/Jellyfin 的反向代理服务器**，修改
 - [RiderLty/fontInAss](https://github.com/RiderLty/fontInAss)
 
 # Star History
-<a href="https://github.com/Akimio521/MediaWarp/stargazers">
-    <img width="500" alt="Star History Chart" src="https://api.star-history.com/svg?repos=Akimio521/MediaWarp&type=Date">
+<a href="https://github.com/AkimioJR/MediaWarp/stargazers">
+    <img width="500" alt="Star History Chart" src="https://api.star-history.com/svg?repos=AkimioJR/MediaWarp&type=Date">
 </a> 

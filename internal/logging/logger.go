@@ -2,8 +2,10 @@ package logging
 
 import (
 	"MediaWarp/internal/config"
+	"fmt"
 	"io"
 
+	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
 
@@ -12,17 +14,13 @@ var (
 	serviceLogger = logrus.New() // 服务日志
 )
 
+func init() {
+	accessLogger.SetFormatter(&LoggerAccessFormatter{})
+	serviceLogger.SetFormatter(&LoggerServiceFormatter{})
+}
+
 func Init() {
-	var (
-		aLS = &accessLoggerSetting{}  // 访问日志logrus相关设置
-		sLS = &serviceLoggerSetting{} // 服务日志logrus相关设置
-	)
-
 	serviceLogger.SetReportCaller(false) // 关闭报告调用方
-
-	// 设置样式
-	accessLogger.SetFormatter(aLS)
-	serviceLogger.SetFormatter(sLS)
 
 	if !config.Logger.AccessLogger.Console { // 访问日志不输出到终端
 		accessLogger.Out = io.Discard
@@ -33,20 +31,35 @@ func Init() {
 	}
 
 	if config.Logger.AccessLogger.File {
-		accessLogger.AddHook(aLS)
+		accessLogger.AddHook(NewLoggerFileHook(false))
 	}
 
 	if config.Logger.ServiceLogger.File {
-		serviceLogger.AddHook(sLS)
+		serviceLogger.AddHook(NewLoggerFileHook(true))
 	}
-
 }
 
 // 访问日志
 //
 // 默认日志级别为 Info
-func AccessLog(format string, args ...any) {
-	accessLogger.Infof(format, args...)
+func AccessLogf(format string, args ...any) {
+	accessLogger.Info(fmt.Sprintf(format, args...))
+}
+
+func AccessDebug(ctx *gin.Context, args ...any) {
+	accessLogger.Debug(formatAccessLog(ctx, logrus.DebugLevel, fmt.Sprint(args...)))
+}
+
+func AccessDebugf(ctx *gin.Context, format string, args ...any) {
+	accessLogger.Debug(formatAccessLog(ctx, logrus.DebugLevel, fmt.Sprintf(format, args...)))
+}
+
+func AccessWarning(ctx *gin.Context, args ...any) {
+	accessLogger.Warning(formatAccessLog(ctx, logrus.WarnLevel, fmt.Sprint(args...)))
+}
+
+func AccessWarningf(ctx *gin.Context, format string, args ...any) {
+	accessLogger.Warning(formatAccessLog(ctx, logrus.WarnLevel, fmt.Sprintf(format, args...)))
 }
 
 // 服务日志
@@ -97,5 +110,6 @@ func Errorf(format string, args ...any) {
 //
 // 设置日志级别
 func SetLevel(level logrus.Level) {
+	accessLogger.SetLevel(level)
 	serviceLogger.SetLevel(level)
 }

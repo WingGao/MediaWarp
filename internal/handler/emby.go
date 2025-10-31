@@ -5,16 +5,20 @@ import (
 	"MediaWarp/internal/config"
 	"MediaWarp/internal/logging"
 	"MediaWarp/internal/service"
+	"MediaWarp/internal/service/alist"
 	"MediaWarp/internal/service/emby"
 	"MediaWarp/utils"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -22,9 +26,10 @@ import (
 
 // Emby服务器处理器
 type EmbyServerHandler struct {
-	server      *emby.EmbyServer       // Emby 服务器
-	routerRules []RegexpRouteRule      // 正则路由规则
-	proxy       *httputil.ReverseProxy // 反向代理
+	server          *emby.EmbyServer       // Emby 服务器
+	routerRules     []RegexpRouteRule      // 正则路由规则
+	proxy           *httputil.ReverseProxy // 反向代理
+	httpStrmHandler StrmHandlerFunc
 }
 
 // 初始化
@@ -84,6 +89,10 @@ func NewEmbyServerHandler(addr string, apiKey string) (*EmbyServerHandler, error
 			)
 		}
 	}
+	embyServerHandler.httpStrmHandler, err = getHTTPStrmHandler()
+	if err != nil {
+		return nil, fmt.Errorf("创建 HTTPStrm 处理器失败: %w", err)
+	}
 	return &embyServerHandler, nil
 }
 
@@ -97,13 +106,21 @@ func (embyServerHandler *EmbyServerHandler) GetRegexpRouteRules() []RegexpRouteR
 	return embyServerHandler.routerRules
 }
 
+func (embyServerHandler *EmbyServerHandler) GetImageCacheRegexp() *regexp.Regexp {
+	return constants.EmbyRegexp.Cache.Image
+}
+
+func (*EmbyServerHandler) GetSubtitleCacheRegexp() *regexp.Regexp {
+	return constants.EmbyRegexp.Cache.Subtitle
+}
+
 // 修改播放信息请求
 //
 // /Items/:itemId/PlaybackInfo
 // 强制将 HTTPStrm 设置为支持直链播放和转码、AlistStrm 设置为支持直链播放并且禁止转码
 func (embyServerHandler *EmbyServerHandler) ModifyPlaybackInfo(rw *http.Response) error {
 	defer rw.Body.Close()
-	body, err := readBody(rw)
+	body, err := io.ReadAll(rw.Body)
 	if err != nil {
 		logging.Warning("读取 Body 出错：", err)
 		return err
@@ -133,7 +150,7 @@ func (embyServerHandler *EmbyServerHandler) ModifyPlaybackInfo(rw *http.Response
 				playbackInfoResponse.MediaSources[index].TranscodingSubProtocol = nil
 				playbackInfoResponse.MediaSources[index].TranscodingContainer = nil
 				if mediasource.DirectStreamURL != nil {
-					apikeypair, err := utils.ResolveEmbyAPIKVPairs(*mediasource.DirectStreamURL)
+					apikeypair, err := utils.ResolveEmbyAPIKVPairs(mediasource.DirectStreamURL)
 					if err != nil {
 						logging.Warning("解析API键值对失败：", err)
 						continue
@@ -152,7 +169,7 @@ func (embyServerHandler *EmbyServerHandler) ModifyPlaybackInfo(rw *http.Response
 				playbackInfoResponse.MediaSources[index].TranscodingURL = nil
 				playbackInfoResponse.MediaSources[index].TranscodingSubProtocol = nil
 				playbackInfoResponse.MediaSources[index].TranscodingContainer = nil
-				apikeypair, err := utils.ResolveEmbyAPIKVPairs(*mediasource.DirectStreamURL)
+				apikeypair, err := utils.ResolveEmbyAPIKVPairs(mediasource.DirectStreamURL)
 				if err != nil {
 					logging.Warning("解析API键值对失败：", err)
 					continue
@@ -172,7 +189,7 @@ func (embyServerHandler *EmbyServerHandler) ModifyPlaybackInfo(rw *http.Response
 					logging.Warning("获取 AlistServer 失败：", err)
 					continue
 				}
-				fsGetData, err := alistServer.FsGet(*mediasource.Path)
+				fsGetData, err := alistServer.FsGet(&alist.FsGetRequest{Path: *mediasource.Path, Page: 1})
 				if err != nil {
 					logging.Warning("请求 FsGet 失败：", err)
 					continue
@@ -189,8 +206,10 @@ func (embyServerHandler *EmbyServerHandler) ModifyPlaybackInfo(rw *http.Response
 		return err
 	}
 
-	rw.Header.Set("Content-Type", "application/json") // 更新 Content-Type 头
-	return updateBody(rw, body)
+	rw.Header.Set("Content-Type", "application/json")        // 更新 Content-Type 头
+	rw.Header.Set("Content-Length", strconv.Itoa(len(body))) // 更新 Content-Length 头
+	rw.Body = io.NopCloser(bytes.NewReader(body))
+	return nil
 }
 
 // 视频流处理器
@@ -238,45 +257,17 @@ func (embyServerHandler *EmbyServerHandler) VideosHandler(ctx *gin.Context) {
 			switch strmFileType {
 			case constants.HTTPStrm:
 				if *mediasource.Protocol == emby.HTTP {
-					redirectURL := *mediasource.Path
-					if config.HTTPStrm.FinalURL {
-						logging.Debug("HTTPStrm 启用获取最终 URL，开始尝试获取最终 URL")
-						if finalURL, err := getFinalURL(redirectURL, ctx.Request.UserAgent()); err != nil {
-							logging.Warning("获取最终 URL 失败，使用原始 URL：", err)
-						} else {
-							redirectURL = finalURL
-						}
-					} else {
-						logging.Debug("HTTPStrm 未启用获取最终 URL，直接使用原始 URL")
-					}
-					logging.Info("HTTPStrm 重定向至：", redirectURL)
+					ctx.Redirect(http.StatusFound, embyServerHandler.httpStrmHandler(*mediasource.Path, ctx.Request.UserAgent()))
+					return
+				}
+
+			case constants.AlistStrm: // 无需判断 *mediasource.Container 是否以Strm结尾，当 AlistStrm 存储的位置有对应的文件时，*mediasource.Container 会被设置为文件后缀
+				redirectURL := alistStrmHandler(*mediasource.Path, opt.(string))
+				if redirectURL != "" {
 					ctx.Redirect(http.StatusFound, redirectURL)
 				}
 				return
-			case constants.AlistStrm: // 无需判断 *mediasource.Container 是否以Strm结尾，当 AlistStrm 存储的位置有对应的文件时，*mediasource.Container 会被设置为文件后缀
-				alistServerAddr := opt.(string)
-				alistServer, err := service.GetAlistServer(alistServerAddr)
-				if err != nil {
-					logging.Warning("获取 AlistServer 失败：", err)
-					return
-				}
-				fsGetData, err := alistServer.FsGet(*mediasource.Path)
-				if err != nil {
-					logging.Warning("请求 FsGet 失败：", err)
-					return
-				}
-				var redirectURL string
-				if config.AlistStrm.RawURL {
-					redirectURL = fsGetData.RawURL
-				} else {
-					redirectURL = fmt.Sprintf("%s/d%s", alistServerAddr, *mediasource.Path)
-					if fsGetData.Sign != "" {
-						redirectURL += "?sign=" + fsGetData.Sign
-					}
-				}
-				logging.Info("AlistStrm 重定向至：", redirectURL)
-				ctx.Redirect(http.StatusFound, redirectURL)
-				return
+
 			case constants.UnknownStrm:
 				embyServerHandler.ReverseProxy(ctx.Writer, ctx.Request)
 				return
@@ -290,7 +281,7 @@ func (embyServerHandler *EmbyServerHandler) VideosHandler(ctx *gin.Context) {
 // 将 SRT 字幕转 ASS
 func (embyServerHandler *EmbyServerHandler) ModifySubtitles(rw *http.Response) error {
 	defer rw.Body.Close()
-	subtitile, err := readBody(rw) // 读取字幕文件
+	subtitile, err := io.ReadAll(rw.Body) // 读取字幕文件
 	if err != nil {
 		logging.Warning("读取原始字幕 Body 出错：", err)
 		return err
@@ -301,7 +292,9 @@ func (embyServerHandler *EmbyServerHandler) ModifySubtitles(rw *http.Response) e
 		if config.Subtitle.SRT2ASS {
 			logging.Info("已将 SRT 字幕已转为 ASS 格式")
 			assSubtitle := utils.SRT2ASS(subtitile, config.Subtitle.ASSStyle)
-			return updateBody(rw, assSubtitle)
+			rw.Header.Set("Content-Length", strconv.Itoa(len(assSubtitle)))
+			rw.Body = io.NopCloser(bytes.NewReader(assSubtitle))
+			return nil
 		}
 	}
 	return nil
@@ -312,14 +305,15 @@ func (embyServerHandler *EmbyServerHandler) ModifySubtitles(rw *http.Response) e
 // 用于修改播放器 JS，实现跨域播放 Strm 文件（302 重定向）
 func (embyServerHandler *EmbyServerHandler) ModifyBaseHtmlPlayer(rw *http.Response) error {
 	defer rw.Body.Close()
-	body, err := readBody(rw)
+	body, err := io.ReadAll(rw.Body)
 	if err != nil {
 		return err
 	}
 
 	body = bytes.ReplaceAll(body, []byte(`mediaSource.IsRemote&&"DirectPlay"===playMethod?null:"anonymous"`), []byte("null")) // 修改响应体
-	return updateBody(rw, body)
-
+	rw.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	rw.Body = io.NopCloser(bytes.NewReader(body))
+	return nil
 }
 
 // 修改首页函数
@@ -327,13 +321,13 @@ func (embyServerHandler *EmbyServerHandler) ModifyIndex(rw *http.Response) error
 	var (
 		htmlFilePath string = path.Join(config.CostomDir(), "index.html")
 		htmlContent  []byte
-		addHEAD      []byte
+		addHEAD      bytes.Buffer
 		err          error
 	)
 
 	defer rw.Body.Close()  // 无论哪种情况，最终都要确保原 Body 被关闭，避免内存泄漏
 	if !config.Web.Index { // 从上游获取响应体
-		if htmlContent, err = readBody(rw); err != nil {
+		if htmlContent, err = io.ReadAll(rw.Body); err != nil {
 			return err
 		}
 	} else { // 从本地文件读取index.html
@@ -344,32 +338,35 @@ func (embyServerHandler *EmbyServerHandler) ModifyIndex(rw *http.Response) error
 	}
 
 	if config.Web.Head != "" { // 用户自定义HEAD
-		addHEAD = append(addHEAD, []byte(config.Web.Head+"\n")...)
+		addHEAD.WriteString(config.Web.Head + "\n")
 	}
 	if config.Web.ExternalPlayerUrl { // 外部播放器
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/embyExternalUrl/embyWebAddExternalUrl/embyLaunchPotplayer.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/embyExternalUrl/embyWebAddExternalUrl/embyLaunchPotplayer.js"></script>` + "\n")
 	}
 	if config.Web.Crx { // crx 美化
-		addHEAD = append(addHEAD, []byte(`<link rel="stylesheet" id="theme-css" href="/MediaWarp/static/emby-crx/static/css/style.css" type="text/css" media="all" />
+		addHEAD.WriteString(`<link rel="stylesheet" id="theme-css" href="/MediaWarp/static/emby-crx/static/css/style.css" type="text/css" media="all" />
     <script src="/MediaWarp/static/emby-crx/static/js/common-utils.js"></script>
     <script src="/MediaWarp/static/emby-crx/static/js/jquery-3.6.0.min.js"></script>
     <script src="/MediaWarp/static/emby-crx/static/js/md5.min.js"></script>
-    <script src="/MediaWarp/static/emby-crx/content/main.js"></script>`+"\n")...)
+    <script src="/MediaWarp/static/emby-crx/content/main.js"></script>` + "\n")
 	}
 	if config.Web.ActorPlus { // 过滤没有头像的演员和制作人员
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/emby-web-mod/actorPlus/actorPlus.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/emby-web-mod/actorPlus/actorPlus.js"></script>` + "\n")
 	}
 	if config.Web.FanartShow { // 显示同人图（fanart图）
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/emby-web-mod/fanart_show/fanart_show.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/emby-web-mod/fanart_show/fanart_show.js"></script>` + "\n")
 	}
 	if config.Web.Danmaku { // 弹幕
-		addHEAD = append(addHEAD, []byte(`<script src="/MediaWarp/static/dd-danmaku/ede.js" defer></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="/MediaWarp/static/dd-danmaku/ede.js" defer></script>` + "\n")
 	}
 	if config.Web.VideoTogether { // VideoTogether
-		addHEAD = append(addHEAD, []byte(`<script src="https://2gether.video/release/extension.website.user.js"></script>`+"\n")...)
+		addHEAD.WriteString(`<script src="https://2gether.video/release/extension.website.user.js"></script>` + "\n")
 	}
-	htmlContent = bytes.Replace(htmlContent, []byte("</head>"), append(addHEAD, []byte("</head>")...), 1) // 将添加HEAD
-	return updateBody(rw, htmlContent)
+	addHEAD.WriteString(`<!-- MediaWarp Web 页面修改功能 -->` + "\n" + "</head>")
+	htmlContent = bytes.Replace(htmlContent, []byte("</head>"), addHEAD.Bytes(), 1) // 将添加HEAD
+	rw.Header.Set("Content-Length", strconv.Itoa(len(htmlContent)))
+	rw.Body = io.NopCloser(bytes.NewReader(htmlContent))
+	return nil
 }
 
 var _ MediaServerHandler = (*EmbyServerHandler)(nil) // 确保 EmbyServerHandler 实现 MediaServerHandler 接口

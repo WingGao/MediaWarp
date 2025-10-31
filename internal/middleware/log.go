@@ -3,6 +3,7 @@ package middleware
 import (
 	"MediaWarp/constants"
 	"MediaWarp/internal/logging"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -28,12 +29,12 @@ func Logger() gin.HandlerFunc {
 
 		statusColor, methodColor := getColor(statusCode, method)
 
-		logging.AccessLog(
-			"【Access】 %s |\033[4%dm %d \033[0m| %-10s |\033[4%dm %-7s \033[0m| %s \"%s\"",
-			startTime.Format(constants.FORMATE_TIME),
-			statusColor, statusCode,
+		logging.AccessLogf(
+			"【Access】 %s |%s| %-10s |%s| %s \"%s\"",
+			startTime.Format(time.DateTime),
+			statusColor.ColorBackground(fmt.Sprintf(" %d ", statusCode)),
 			wasteTime,
-			methodColor, method,
+			methodColor.ColorBackground(fmt.Sprintf(" %-7s ", method)),
 			clientIP,
 			path,
 		)
@@ -41,8 +42,8 @@ func Logger() gin.HandlerFunc {
 }
 
 // 根据Http状态码和Http请求方法获取颜色
-func getColor(statusCode int, method string) (uint8, uint8) {
-	var statusColor, methodColor uint8
+func getColor(statusCode int, method string) (constants.Color, constants.Color) {
+	var statusColor, methodColor constants.Color
 	switch {
 	case statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices:
 		statusColor = constants.StatusCode200Color

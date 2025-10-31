@@ -4,22 +4,17 @@ import (
 	"MediaWarp/constants"
 	"MediaWarp/internal/config"
 	"MediaWarp/internal/logging"
-	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"reflect"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/gin-gonic/gin"
 )
 
@@ -71,90 +66,6 @@ func recgonizeStrmFileType(strmFilePath string) (constants.StrmFileType, any) {
 	return constants.UnknownStrm, nil
 }
 
-// 读取响应体
-//
-// 读取响应体，解压缩 GZIP、Brotli 数据（若响应体被压缩）
-func readBody(rw *http.Response) ([]byte, error) {
-	encoding := rw.Header.Get("Content-Encoding")
-
-	var reader io.Reader
-	switch encoding {
-	case "gzip":
-		logging.Debug("解码 GZIP 数据")
-		gr, err := gzip.NewReader(rw.Body)
-		if err != nil {
-			return nil, fmt.Errorf("gzip reader error: %w", err)
-		}
-		defer gr.Close()
-		reader = gr
-
-	case "br":
-		logging.Debug("解码 Brotli 数据")
-		reader = brotli.NewReader(rw.Body)
-
-	case "": // 无压缩
-		logging.Debug("无压缩数据")
-		reader = rw.Body
-
-	default:
-		return nil, fmt.Errorf("unsupported Content-Encoding: %s", encoding)
-	}
-	return io.ReadAll(reader)
-}
-
-// 更新响应体
-//
-// 修改响应体、更新Content-Length
-func updateBody(rw *http.Response, content []byte) error {
-	encoding := rw.Header.Get("Content-Encoding")
-	//encoding := ""
-	var (
-		compressed bytes.Buffer
-		writer     io.Writer
-	)
-
-	// 根据原始编码选择压缩方式
-	switch encoding {
-	case "gzip":
-		logging.Debug("使用 GZIP 重新编码数据")
-		gw := gzip.NewWriter(&compressed)
-		defer gw.Close()
-		writer = gw
-
-	case "br":
-		logging.Debug("使用 Brotli 重新编码数据")
-		bw := brotli.NewWriter(&compressed)
-		defer bw.Close()
-		writer = bw
-
-	case "": // 无压缩
-		logging.Debug("无压缩数据")
-		writer = &compressed
-		rw.Header.Del("Content-Encoding")
-	default:
-		logging.Warningf("不支持的重新编码：%s，将不对数据进行压缩编码", encoding)
-		rw.Header.Del("Content-Encoding")
-	}
-
-	if _, err := writer.Write(content); err != nil {
-		return fmt.Errorf("compression write error: %w", err)
-	}
-
-	// Brotli 需要显式 Flush
-	if bw, ok := writer.(*brotli.Writer); ok {
-		if err := bw.Flush(); err != nil {
-			return err
-		}
-	}
-
-	// 设置新 Body
-	rw.Body = io.NopCloser(bytes.NewReader(compressed.Bytes()))
-	rw.ContentLength = int64(compressed.Len())
-	rw.Header.Set("Content-Length", strconv.Itoa(compressed.Len())) // 更新响应头
-
-	return nil
-}
-
 const (
 	MaxRedirectAttempts = 10               // 最大重定向次数限制
 	RedirectTimeout     = 10 * time.Second // 最大超时时间
@@ -167,7 +78,7 @@ var (
 )
 
 // 获取URL的最终目标地址（自动跟踪重定向）
-func getFinalURL(rawURL string, ua string) (string, error) {
+func getFinalURL(client *http.Client, rawURL string, ua string) (string, error) {
 	startTime := time.Now()
 	defer func() {
 		logging.Debugf("获取 %s 最终URL耗时：%s", rawURL, time.Since(startTime))
@@ -179,15 +90,6 @@ func getFinalURL(rawURL string, ua string) (string, error) {
 	}
 	if parsedURL.Scheme == "" {
 		return "", fmt.Errorf("URL 缺少协议头： %s", parsedURL)
-	}
-
-	// 创建自定义HTTP客户端配置
-	client := &http.Client{
-		Timeout: RedirectTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// 禁止自动重定向，以便手动处理
-			return http.ErrUseLastResponse
-		},
 	}
 
 	currentURL := parsedURL.String()
@@ -222,12 +124,6 @@ func getFinalURL(rawURL string, ua string) (string, error) {
 				return "", ErrInvalidLocationHeader
 			}
 			currentURL = location.String()
-			if strings.HasPrefix(currentURL, "/302/?pickcode=") {
-				fullURL := fmt.Sprintf("%s://%s%s", req.URL.Scheme, req.URL.Host, location)
-				logging.Debugf("拼接完整 URL：%s -> %s", currentURL, fullURL)
-				currentURL = fullURL
-			}
-
 			continue
 		}
 

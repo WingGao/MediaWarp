@@ -17,7 +17,6 @@ func InitRouter() *gin.Engine {
 	ginR.Use(
 		middleware.Logger(),
 		middleware.Recovery(),
-		middleware.QueryCaseInsensitive(),
 		middleware.SetRefererPolicy(constants.SameOrigin),
 	)
 
@@ -49,7 +48,32 @@ func InitRouter() *gin.Engine {
 		}
 	}
 
-	ginR.NoRoute(RegexpRouterHandler)
+	handlers := make(gin.HandlersChain, 0, 3)
+	if config.Cache.Enable {
+		mediaServerHandler := handler.GetMediaServer()
+		{
+			if config.Cache.ImageTTL > 0 {
+				logging.Infof("图片缓存中间件已启用, TTL: %s", config.Cache.ImageTTL.String())
+				handlers = append(handlers, middleware.ImageCache(config.Cache.ImageTTL, mediaServerHandler.GetImageCacheRegexp()))
+			} else {
+				logging.Infof("图片缓存中间件未启用, TTL: %s", config.Cache.ImageTTL.String())
+			}
+		}
+
+		{
+			if config.Cache.SubtitleTTL > 0 {
+				logging.Infof("字幕缓存中间件已启用, TTL: %s", config.Cache.SubtitleTTL.String())
+				handlers = append(handlers, middleware.SubtitleCache(config.Cache.SubtitleTTL, mediaServerHandler.GetSubtitleCacheRegexp()))
+			} else {
+				logging.Infof("字幕缓存中间件未启用, TTL: %s", config.Cache.SubtitleTTL.String())
+			}
+		}
+	} else {
+		logging.Info("全局缓存未启用, 未添加缓存中间件")
+	}
+
+	handlers = append(handlers, getRegexpRouterHandler())
+	ginR.NoRoute(handlers...)
 	return ginR
 }
 
@@ -57,17 +81,23 @@ func InitRouter() *gin.Engine {
 //
 // 从媒体服务器处理结构体中获取正则路由规则
 // 依次匹配请求, 找到对应的处理器
-func RegexpRouterHandler(ctx *gin.Context) {
+func getRegexpRouterHandler() gin.HandlerFunc {
 	mediaServerHandler := handler.GetMediaServer()
+	middlewareChain := NewMiddlewareChain().
+		Add(QueryKeyCaseInsensitive).
+		Add(DisableCompression)
 
-	for _, rule := range mediaServerHandler.GetRegexpRouteRules() {
-		if rule.Regexp.MatchString(ctx.Request.URL.Path) { // 不带查询参数的字符串：/emby/Items/54/Images/Primary
-			logging.Debugf("URL: %s 匹配成功 -> %s", ctx.Request.URL.Path, rule.Regexp.String())
-			rule.Handler(ctx)
-			return
+	return func(ctx *gin.Context) {
+		for _, rule := range mediaServerHandler.GetRegexpRouteRules() {
+			if rule.Regexp.MatchString(ctx.Request.URL.Path) { // 不带查询参数的字符串：/emby/Items/54/Images/Primary
+				logging.AccessDebugf(ctx, "匹配成功正则表达式: %s", rule.Regexp.String())
+
+				middlewareChain.Execute(rule.Handler)(ctx)
+				return
+			}
 		}
-	}
 
-	// 未匹配路由
-	mediaServerHandler.ReverseProxy(ctx.Writer, ctx.Request)
+		// 未匹配路由
+		mediaServerHandler.ReverseProxy(ctx.Writer, ctx.Request)
+	}
 }
