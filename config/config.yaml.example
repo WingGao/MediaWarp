@@ -77,6 +77,10 @@ alist_strm:                                 # AlistStrm 相关配置（Strm 文�
       token: xxxxxxx                        # Token 优先级高于 Username 和 Password
       prefix_list: 
         - /media/strm
+      # 本地路径和Alist 路径映射
+      path_mapper: {
+        "/Volumes/BtDown/moviepilot":"/Volumes/115/Bt/moviepilot"
+      }
 
 subtitle:                                   # 字体相关设置（仅 Emby 支持）
   enable: true                              # 启用

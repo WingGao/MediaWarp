@@ -198,14 +198,14 @@ func (client *AlistClient) GetFileURL(p string, isRawURL bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("获取文件信息失败：%w", err)
 	}
-	if isRawURL {
+	if isRawURL && fileData.RawURL != "" {
 		return fileData.RawURL, nil
 	}
 	var url strings.Builder
 	url.WriteString(client.GetEndpoint())
+	url.WriteString(path.Join("/d", client.userInfo.BasePath, p))
 	if fileData.Sign != "" {
 		url.WriteString("?sign=" + fileData.Sign)
 	}
-	url.WriteString(path.Join("/d", client.userInfo.BasePath, p))
 	return url.String(), nil
 }

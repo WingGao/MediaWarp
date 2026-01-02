@@ -57,7 +57,7 @@ func recgonizeStrmFileType(strmFilePath string) (constants.StrmFileType, any) {
 			for _, prefix := range alistStrmConfig.PrefixList {
 				if strings.HasPrefix(strmFilePath, prefix) {
 					logging.Debugf("%s 成功匹配路径：%s，Strm 类型：%s，AlistServer 地址：%s", strmFilePath, prefix, constants.AlistStrm, alistStrmConfig.ADDR)
-					return constants.AlistStrm, alistStrmConfig.ADDR
+					return constants.AlistStrm, alistStrmConfig
 				}
 			}
 		}
@@ -133,4 +133,9 @@ func getFinalURL(client *http.Client, rawURL string, ua string) (string, error) 
 	}
 
 	return "", ErrMaxRedirectsExceeded
+}
+
+// 检查请求是否来自局域网
+func checkRequestIsLocalNetwork(ctx *gin.Context) bool {
+	return true
 }

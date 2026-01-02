@@ -47,7 +47,8 @@ func NewJellyfinHander(addr string, apiKey string) (*JellyfinHandler, error) {
 				Regexp: constants.JellyfinRegexp.Router.ModifyPlaybackInfo,
 				Handler: responseModifyCreater(
 					&httputil.ReverseProxy{Director: jellyfinHandler.proxy.Director},
-					jellyfinHandler.ModifyPlaybackInfoWing,
+					//jellyfinHandler.ModifyPlaybackInfoWing,
+					jellyfinHandler.ModifyPlaybackInfo,
 				),
 			},
 			{
@@ -170,7 +171,7 @@ func (jellyfinHandler *JellyfinHandler) ModifyPlaybackInfo(rw *http.Response) er
 			}
 
 			if playbackInfoResponse.MediaSources[index].Size == nil {
-				alistClient, err := service.GetAlistClient(opt.(string))
+				alistClient, err := service.GetAlistClient(opt.(config.AlistSetting).ADDR)
 				if err != nil {
 					logging.Warning("获取 AlistClient 失败：", err)
 					continue
@@ -218,11 +219,11 @@ func (jellyfinHandler *JellyfinHandler) VideosHandler(ctx *gin.Context) {
 
 	item := itemResponse.Items[0]
 
-	if !strings.HasSuffix(strings.ToLower(*item.Path), ".strm") { // 不是 Strm 文件
-		logging.Debugf("播放本地视频：%s，不进行处理", *item.Path)
-		jellyfinHandler.proxy.ServeHTTP(ctx.Writer, ctx.Request)
-		return
-	}
+	//if !strings.HasSuffix(strings.ToLower(*item.Path), ".strm") { // 不是 Strm 文件
+	//	logging.Debugf("播放本地视频：%s，不进行处理", *item.Path)
+	//	jellyfinHandler.proxy.ServeHTTP(ctx.Writer, ctx.Request)
+	//	return
+	//}
 
 	strmFileType, opt := recgonizeStrmFileType(*item.Path)
 	for _, mediasource := range item.MediaSources {
@@ -235,18 +236,20 @@ func (jellyfinHandler *JellyfinHandler) VideosHandler(ctx *gin.Context) {
 				}
 
 			case constants.AlistStrm: // 无需判断 *mediasource.Container 是否以Strm结尾，当 AlistStrm 存储的位置有对应的文件时，*mediasource.Container 会被设置为文件后缀
-				redirectURL := alistStrmHandler(*mediasource.Path, opt.(string))
+				redirectURL := alistFileHandler(*mediasource.Path, opt.(config.AlistSetting))
 				if redirectURL != "" {
 					ctx.Redirect(http.StatusFound, redirectURL)
 				}
 				return
 
 			case constants.UnknownStrm:
-				jellyfinHandler.proxy.ServeHTTP(ctx.Writer, ctx.Request)
-				return
+				//	jellyfinHandler.proxy.ServeHTTP(ctx.Writer, ctx.Request)
+				//	return
+				break
 			}
 		}
 	}
+	jellyfinHandler.proxy.ServeHTTP(ctx.Writer, ctx.Request)
 }
 
 // 修改首页函数
