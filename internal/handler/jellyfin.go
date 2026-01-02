@@ -239,12 +239,10 @@ func (jellyfinHandler *JellyfinHandler) VideosHandler(ctx *gin.Context) {
 				redirectURL := alistFileHandler(*mediasource.Path, opt.(config.AlistSetting))
 				if redirectURL != "" {
 					ctx.Redirect(http.StatusFound, redirectURL)
+					return
 				}
-				return
 
 			case constants.UnknownStrm:
-				//	jellyfinHandler.proxy.ServeHTTP(ctx.Writer, ctx.Request)
-				//	return
 				break
 			}
 		}

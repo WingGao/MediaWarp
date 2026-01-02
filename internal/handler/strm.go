@@ -118,7 +118,7 @@ func alistFileHandler(content string, alistConfig config.AlistSetting) string {
 
 	// 如果没有匹配的路径映射，使用原始内容
 	if alistPath == "" {
-		alistPath = content
+		return ""
 	}
 
 	// 判断alistPath是否真实存在 FsGet

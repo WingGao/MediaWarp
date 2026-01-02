@@ -1,3 +1,15 @@
+
+# 新增功能
+
+* 自动获取alist是否存在对应文件，并302到alist。
+
+```powershell
+$env:CGO_ENABLED="0"
+$env:GOOS="linux"
+$env:GOARCH="amd64"
+go build -o MediaWarp-wing
+```
+
 ```
 "/emby/Episode/fbf1b6e736c25685c05cb3fc6153fe90/IntroTimestamps"
 【Access】 2025-12-31 17:34:30 | 200 | 16.038397ms | POST    | 101.228.32.151 "/emby/Items/fbf1b6e736c25685c05cb3fc6153fe90/PlaybackInfo?StartTimeTicks=0&AutoOpenLiveStream=false&UserId=bbebaf36e2e04c95878ba6a593599c11&MaxStreamingBitrate=500000000&reqformat=json&IsPlayback=true"

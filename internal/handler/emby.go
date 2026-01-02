@@ -245,11 +245,11 @@ func (embyServerHandler *EmbyServerHandler) VideosHandler(ctx *gin.Context) {
 
 	item := itemResponse.Items[0]
 
-	if !strings.HasSuffix(strings.ToLower(*item.Path), ".strm") { // 不是 Strm 文件
-		logging.Debug("播放本地视频：" + *item.Path + "，不进行处理")
-		embyServerHandler.ReverseProxy(ctx.Writer, ctx.Request)
-		return
-	}
+	//if !strings.HasSuffix(strings.ToLower(*item.Path), ".strm") { // 不是 Strm 文件
+	//	logging.Debug("播放本地视频：" + *item.Path + "，不进行处理")
+	//	embyServerHandler.ReverseProxy(ctx.Writer, ctx.Request)
+	//	return
+	//}
 
 	strmFileType, opt := recgonizeStrmFileType(*item.Path)
 	for _, mediasource := range item.MediaSources {
@@ -262,18 +262,18 @@ func (embyServerHandler *EmbyServerHandler) VideosHandler(ctx *gin.Context) {
 				}
 
 			case constants.AlistStrm: // 无需判断 *mediasource.Container 是否以Strm结尾，当 AlistStrm 存储的位置有对应的文件时，*mediasource.Container 会被设置为文件后缀
-				redirectURL := alistStrmHandler(*mediasource.Path, opt.(config.AlistSetting))
+				redirectURL := alistFileHandler(*mediasource.Path, opt.(config.AlistSetting))
 				if redirectURL != "" {
 					ctx.Redirect(http.StatusFound, redirectURL)
+					return
 				}
-				return
 
 			case constants.UnknownStrm:
-				embyServerHandler.ReverseProxy(ctx.Writer, ctx.Request)
-				return
+				break
 			}
 		}
 	}
+	embyServerHandler.ReverseProxy(ctx.Writer, ctx.Request)
 }
 
 // 修改字幕
