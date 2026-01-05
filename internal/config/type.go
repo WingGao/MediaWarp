@@ -75,12 +75,12 @@ type HTTPStrmSetting struct {
 
 // AlistStrm具体设置
 type AlistSetting struct {
-	ADDR       string            `yaml:"addr"`
-	Username   string            `yaml:"username"`
-	Password   string            `yaml:"password"`
-	Token      *string           `yaml:"token"`
-	PrefixList []string          `yaml:"prefix_list"`
-	PathMapper map[string]string `yaml:"path_mapper"` // key=本地路径，value=Alist 地址
+	ADDR       string   `yaml:"addr"`
+	Username   string   `yaml:"username"`
+	Password   string   `yaml:"password"`
+	Token      *string  `yaml:"token"`
+	PrefixList []string `yaml:"prefix_list"`
+	PathMapper []string `yaml:"path_mapper"` // 本地路径:Alist路径
 }
 
 // AlistStrm播放设置

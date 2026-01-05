@@ -107,9 +107,10 @@ func alistFileHandler(content string, alistConfig config.AlistSetting) string {
 	// 判断localPath是否在 PathMapper 中, 并转换为 alistPath
 	alistPath := ""
 	if alistConfig.PathMapper != nil {
-		for localPrefix, alistPrefix := range alistConfig.PathMapper {
-			if strings.HasPrefix(realPath, localPrefix) {
-				alistPath = strings.Replace(realPath, localPrefix, alistPrefix, 1)
+		for _, pMapperStr := range alistConfig.PathMapper {
+			pair := strings.Split(pMapperStr, ":")
+			if strings.HasPrefix(realPath, pair[0]) {
+				alistPath = strings.Replace(realPath, pair[0], pair[1], 1)
 				logging.Debugf("路径映射：%s -> %s", realPath, alistPath)
 				break
 			}
