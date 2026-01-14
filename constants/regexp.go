@@ -18,6 +18,7 @@ type RouterRegexps struct {
 	ModifyBaseHtmlPlayer *regexp.Regexp // 修改 Web 的 basehtmlplayer.js
 	ModifyIndex          *regexp.Regexp // Web 首页
 	ModifyPlaybackInfo   *regexp.Regexp // 播放信息处理接口
+	DownloadHandler      *regexp.Regexp // 下载接口
 	ModifySubtitles      *regexp.Regexp // 字幕处理接口
 }
 
@@ -31,6 +32,7 @@ var EmbyRegexp = &EmbyRegexps{
 		ModifyBaseHtmlPlayer: regexp.MustCompile(`(?i)^/web/modules/htmlvideoplayer/basehtmlplayer.js$`),
 		ModifyIndex:          regexp.MustCompile(`^/web/index.html$`),
 		ModifyPlaybackInfo:   regexp.MustCompile(`(?i)^(/emby)?/Items/\d+/PlaybackInfo$`),
+		DownloadHandler:      regexp.MustCompile(`(?i)^(/emby)?/Items/\w+/Download$`),
 		ModifySubtitles:      regexp.MustCompile(`(?i)^(/emby)?/Videos/\d+/\w+/subtitles$`),
 	},
 	Others: OthersRegexps{

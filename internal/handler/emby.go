@@ -56,6 +56,10 @@ func NewEmbyServerHandler(addr string, apiKey string) (*EmbyServerHandler, error
 				),
 			},
 			{
+				Regexp:  constants.EmbyRegexp.Router.DownloadHandler,
+				Handler: embyServerHandler.DownloadHandler,
+			},
+			{
 				Regexp: constants.EmbyRegexp.Router.ModifyBaseHtmlPlayer,
 				Handler: responseModifyCreater(
 					&httputil.ReverseProxy{Director: embyServerHandler.proxy.Director},
@@ -210,6 +214,11 @@ func (embyServerHandler *EmbyServerHandler) ModifyPlaybackInfo(rw *http.Response
 	rw.Header.Set("Content-Length", strconv.Itoa(len(body))) // 更新 Content-Length 头
 	rw.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
+}
+
+func (embyServerHandler *EmbyServerHandler) DownloadHandler(ctx *gin.Context) {
+	// 将下载转到alist
+	embyServerHandler.VideosHandler(ctx)
 }
 
 // 视频流处理器
